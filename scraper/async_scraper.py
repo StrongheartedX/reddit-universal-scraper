@@ -14,18 +14,18 @@ from urllib.parse import urlparse
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import USER_AGENT, MIRRORS, ASYNC_MAX_CONCURRENT, ASYNC_BATCH_SIZE
+from config import USER_AGENT, MIRRORS, ASYNC_MAX_CONCURRENT, ASYNC_BATCH_SIZE, PROXY_URL
 import subprocess
 import tempfile
 
 # Semaphore to limit concurrent requests
 semaphore = None
 
-async def fetch_json(session, url, retries=3):
+async def fetch_json(session, url, retries=3, proxy=None):
     """Fetch JSON with retry logic."""
     for attempt in range(retries):
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as response:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15), proxy=proxy) as response:
                 if response.status == 200:
                     return await response.json()
                 elif response.status == 429:  # Rate limited
@@ -35,7 +35,7 @@ async def fetch_json(session, url, retries=3):
                 await asyncio.sleep(2)
     return None
 
-async def fetch_posts_page(session, base_url, target, after=None, is_user=False, batch_size=100):
+async def fetch_posts_page(session, base_url, target, after=None, is_user=False, batch_size=100, proxy=None):
     """Fetch a single page of posts."""
     if is_user:
         path = f"/user/{target}/submitted.json"
@@ -46,9 +46,9 @@ async def fetch_posts_page(session, base_url, target, after=None, is_user=False,
     if after:
         url += f"&after={after}"
     
-    return await fetch_json(session, url)
+    return await fetch_json(session, url, proxy=proxy)
 
-async def download_media_async(session, url, save_path):
+async def download_media_async(session, url, save_path, proxy=None):
     """Download media file asynchronously."""
     global semaphore
     
@@ -57,7 +57,7 @@ async def download_media_async(session, url, save_path):
     
     async with semaphore:
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=60), proxy=proxy) as response:
                 if response.status == 200:
                     async with aiofiles.open(save_path, 'wb') as f:
                         async for chunk in response.content.iter_chunked(8192):
@@ -67,7 +67,7 @@ async def download_media_async(session, url, save_path):
             pass
     return False
 
-async def download_reddit_video_with_audio_async(session, video_url, save_path):
+async def download_reddit_video_with_audio_async(session, video_url, save_path, proxy=None):
     """
     Downloads Reddit video with audio asynchronously.
     Reddit stores video and audio separately - this combines them using ffmpeg.
@@ -95,7 +95,7 @@ async def download_reddit_video_with_audio_async(session, video_url, save_path):
             video_temp.close()
             
             try:
-                async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=60), proxy=proxy) as response:
                     if response.status != 200:
                         return False
                     async with aiofiles.open(video_temp_path, 'wb') as f:
@@ -110,7 +110,7 @@ async def download_reddit_video_with_audio_async(session, video_url, save_path):
             audio_temp_path = None
             for audio_url in audio_urls:
                 try:
-                    async with session.get(audio_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    async with session.get(audio_url, timeout=aiohttp.ClientTimeout(total=30), proxy=proxy) as response:
                         if response.status == 200:
                             audio_temp = tempfile.NamedTemporaryFile(suffix='_audio.mp4', delete=False)
                             audio_temp_path = audio_temp.name
@@ -168,13 +168,13 @@ async def download_reddit_video_with_audio_async(session, video_url, save_path):
             pass
     return False
 
-async def fetch_comments_async(session, permalink):
+async def fetch_comments_async(session, permalink, proxy=None):
     """Fetch comments asynchronously."""
     global semaphore
     
     async with semaphore:
         url = f"https://old.reddit.com{permalink}.json?limit=100"
-        data = await fetch_json(session, url)
+        data = await fetch_json(session, url, proxy=proxy)
         
         if data and len(data) > 1:
             return parse_comments_sync(data[1]['data']['children'], permalink)
@@ -289,7 +289,7 @@ def extract_post_data(p):
         "source": "Async-Scraper"
     }
 
-async def scrape_async(target, limit=100, is_user=False, download_media=True, scrape_comments=True):
+async def scrape_async(target, limit=100, is_user=False, download_media=True, scrape_comments=True, proxy=None):
     """
     Main async scraping function.
     
@@ -303,8 +303,27 @@ async def scrape_async(target, limit=100, is_user=False, download_media=True, sc
     global semaphore
     semaphore = asyncio.Semaphore(ASYNC_MAX_CONCURRENT)
     
+    proxy_url = proxy if proxy is not None else PROXY_URL
+    if proxy_url and proxy_url.lower() in ["none", "direct", "disabled", ""]:
+        proxy_url = None
+    elif not proxy_url:
+        proxy_url = None
+        
     prefix = "u" if is_user else "r"
     print(f"🚀 ASYNC Scraper starting for {prefix}/{target}")
+    if proxy_url:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(proxy_url)
+            if parsed.username:
+                masked_proxy = f"{parsed.scheme}://{parsed.username}:*****@{parsed.hostname}"
+                if parsed.port:
+                    masked_proxy += f":{parsed.port}"
+            else:
+                masked_proxy = proxy_url
+        except Exception:
+            masked_proxy = "[Invalid Proxy URL]"
+        print(f"🔒 Using Proxy: {masked_proxy}")
     print(f"   Target: {limit} posts | Media: {download_media} | Comments: {scrape_comments}")
     print(f"   Concurrency: {ASYNC_MAX_CONCURRENT} simultaneous requests")
     print("-" * 50)
@@ -347,7 +366,7 @@ async def scrape_async(target, limit=100, is_user=False, download_media=True, sc
             for mirror in mirrors:
                 # Use proper batch size
                 batch_size = min(100, limit - total_fetched)
-                data = await fetch_posts_page(session, mirror, target, after, is_user, batch_size)
+                data = await fetch_posts_page(session, mirror, target, after, is_user, batch_size, proxy=proxy_url)
                 if data:
                     print(f"✅ Fetched from {mirror}")
                     break
@@ -384,24 +403,24 @@ async def scrape_async(target, limit=100, is_user=False, download_media=True, sc
                     for i, img_url in enumerate(media['images'][:5]):
                         ext = os.path.splitext(urlparse(img_url).path)[1] or '.jpg'
                         save_path = f"{images_dir}/{post['id']}_{i}{ext}"
-                        media_tasks.append(download_media_async(session, img_url, save_path))
+                        media_tasks.append(download_media_async(session, img_url, save_path, proxy=proxy_url))
                     
                     for i, img_url in enumerate(media['galleries'][:10]):
                         save_path = f"{images_dir}/{post['id']}_gallery_{i}.jpg"
-                        media_tasks.append(download_media_async(session, img_url, save_path))
+                        media_tasks.append(download_media_async(session, img_url, save_path, proxy=proxy_url))
                     
                     for i, vid_url in enumerate(media['videos'][:2]):
                         if 'youtube' not in vid_url:
                             save_path = f"{videos_dir}/{post['id']}_{i}.mp4"
                             # Use enhanced download for Reddit videos (includes audio)
                             if 'v.redd.it' in vid_url or 'reddit.com' in vid_url:
-                                media_tasks.append(download_reddit_video_with_audio_async(session, vid_url, save_path))
+                                media_tasks.append(download_reddit_video_with_audio_async(session, vid_url, save_path, proxy=proxy_url))
                             else:
-                                media_tasks.append(download_media_async(session, vid_url, save_path))
+                                media_tasks.append(download_media_async(session, vid_url, save_path, proxy=proxy_url))
                 
                 # Queue comment fetching
                 if scrape_comments and post['num_comments'] > 0:
-                    comment_tasks.append(fetch_comments_async(session, post['permalink']))
+                    comment_tasks.append(fetch_comments_async(session, post['permalink'], proxy=proxy_url))
             
             all_posts.extend(batch_posts)
             total_fetched += len(batch_posts)
@@ -464,9 +483,9 @@ async def scrape_async(target, limit=100, is_user=False, download_media=True, sc
         'duration': duration
     }
 
-def run_async_scraper(target, limit=100, is_user=False, download_media=True, scrape_comments=True):
+def run_async_scraper(target, limit=100, is_user=False, download_media=True, scrape_comments=True, proxy=None):
     """Wrapper to run async scraper from sync code."""
-    return asyncio.run(scrape_async(target, limit, is_user, download_media, scrape_comments))
+    return asyncio.run(scrape_async(target, limit, is_user, download_media, scrape_comments, proxy))
 
 # CLI for testing
 if __name__ == "__main__":
@@ -478,6 +497,7 @@ if __name__ == "__main__":
     parser.add_argument("--user", action="store_true")
     parser.add_argument("--no-media", action="store_true")
     parser.add_argument("--no-comments", action="store_true")
+    parser.add_argument("--proxy", help="Proxy URL (e.g. http://username:password@host:port)")
     
     args = parser.parse_args()
     
@@ -486,5 +506,6 @@ if __name__ == "__main__":
         args.limit,
         args.user,
         not args.no_media,
-        not args.no_comments
+        not args.no_comments,
+        args.proxy
     )

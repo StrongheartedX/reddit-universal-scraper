@@ -7,7 +7,7 @@ import pandas as pd
 import datetime
 import time
 import os
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 import argparse
 import random
 import sys
@@ -16,6 +16,16 @@ import subprocess
 import tempfile
 from urllib.parse import urlparse
 from pathlib import Path
+
+# Load environment variables from .env file if it exists
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, val = line.split("=", 1)
+                os.environ[key.strip()] = val.strip().strip('"').strip("'")
 
 # --- CONFIGURATION ---
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -28,6 +38,8 @@ MIRRORS = [
     "https://libreddit.northboot.xyz",
     "https://redlib.tux.pizza"
 ]
+
+PROXY_URL = os.getenv("PROXY_URL", "")
 
 SEEN_URLS = set()
 SESSION = requests.Session()
@@ -732,9 +744,40 @@ Commands:
     parser.add_argument("--vacuum", action="store_true", help="Optimize SQLite database")
     parser.add_argument("--export-parquet", type=str, help="Export subreddit to Parquet format")
     parser.add_argument("--api", action="store_true", help="Start REST API server (port 8000)")
+    parser.add_argument("--proxy", type=str, help="Proxy URL (e.g. http://username:password@host:port)")
     
     args = parser.parse_args()
     
+    # Configure Proxy
+    proxy_to_use = args.proxy if args.proxy is not None else PROXY_URL
+    if proxy_to_use and proxy_to_use.lower() not in ["none", "direct", "disabled", ""]:
+        SESSION.proxies = {
+            "http": proxy_to_use,
+            "https": proxy_to_use,
+        }
+        os.environ["HTTP_PROXY"] = proxy_to_use
+        os.environ["HTTPS_PROXY"] = proxy_to_use
+        
+        try:
+            parsed = urlparse(proxy_to_use)
+            if parsed.username:
+                masked_proxy = f"{parsed.scheme}://{parsed.username}:*****@{parsed.hostname}"
+                if parsed.port:
+                    masked_proxy += f":{parsed.port}"
+            else:
+                masked_proxy = proxy_to_use
+        except Exception:
+            masked_proxy = "[Invalid Proxy URL]"
+        print(f"🔒 Using Proxy: {masked_proxy}")
+    else:
+        if "HTTP_PROXY" in os.environ:
+            del os.environ["HTTP_PROXY"]
+        if "HTTPS_PROXY" in os.environ:
+            del os.environ["HTTPS_PROXY"]
+        SESSION.proxies = {}
+        if proxy_to_use and proxy_to_use.lower() in ["none", "direct", "disabled"]:
+            print("🚫 Proxy explicitly disabled (Direct connection)")
+        
     print("=" * 50)
     print("🤖 UNIVERSAL REDDIT SCRAPER SUITE")
     print("=" * 50)

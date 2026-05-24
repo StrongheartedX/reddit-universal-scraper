@@ -29,7 +29,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS with UX improvements
 st.markdown("""
 <style>
     .main-header {
@@ -46,17 +46,77 @@ st.markdown("""
         border-radius: 10px;
         color: white;
     }
+    /* Tab styling with scroll indicators */
     .stTabs [data-baseweb="tab-list"] {
         gap: 24px;
+        position: relative;
+        overflow-x: auto;
+        scroll-behavior: smooth;
+        padding-right: 30px;
+    }
+    .stTabs [data-baseweb="tab-list"]::after {
+        content: "→";
+        position: sticky;
+        right: 0;
+        background: linear-gradient(90deg, transparent, #0e1117 50%);
+        padding-left: 20px;
+        padding-right: 10px;
+        font-size: 1.2rem;
+        color: #fafafa;
+        opacity: 0.7;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 0.4; }
+        50% { opacity: 1; }
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
         padding: 10px 20px;
         background-color: #262730;
         border-radius: 5px;
+        white-space: nowrap;
     }
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #3a3b45;
+        transition: background-color 0.2s ease;
+    }
+    /* Tooltip styling */
+    .tooltip-text {
+        font-size: 0.85rem;
+        color: #888;
+        margin-top: 0.25rem;
+    }
+    /* Status indicators with accessible colors */
+    .status-running { color: #00d26a; font-weight: bold; }
+    .status-stopped { color: #ff6b6b; font-weight: bold; }
+    .status-warning { color: #ffd93d; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
+
+def is_sensitive(path: str) -> bool:
+    """Check if the path targets sensitive system or configuration files."""
+    path_lower = path.replace('\\', '/').lower()
+    sensitive_keywords = ['.ssh', '.aws', 'credentials', '.env', 'passwd', 'shadow', 'etc/hosts']
+    return any(keyword in path_lower for keyword in sensitive_keywords)
+
+def validate_path(path_str: str, base_dir: Path) -> str:
+    """Resolve and validate the path to prevent path traversal."""
+    abs_path = os.path.abspath(path_str)
+    abs_base = os.path.abspath(base_dir)
+    norm_base = os.path.join(abs_base, '')
+    if not abs_path.startswith(norm_base) and abs_path != abs_base:
+        raise ValueError("Path traversal detected")
+    return abs_path
+
+def sanitize_emotes(text: str) -> str:
+    """Sanitize Reddit custom emotes in markdown to prevent Streamlit path crashes on Windows."""
+    if not isinstance(text, str):
+        return text
+    import re
+    # Replace markdown images/links pointing to emote|... with a text placeholder
+    # e.g., ![img](emote|t5_2qp7h|51073) -> [emote: \1]
+    return re.sub(r'!\[[^\]]*\]\(emote\|([^)]+)\)', r'[emote: \1]', text)
 
 def load_subreddit_data(subreddit_path):
     """Load all data for a subreddit."""
@@ -132,10 +192,22 @@ def main():
     
     if not options:
         st.sidebar.warning(empty_msg)
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🚀 Quick Start")
         if source_type == "Subreddits":
-            st.sidebar.info("Go to '⚙️ Scraper' tab to start scraping.")
+            st.sidebar.markdown("""
+            1. Go to the **⚙️ Scraper** tab
+            2. Enter a subreddit name (e.g. `python`)
+            3. Click **Start Scraping**
+            """)
         else:
-            st.sidebar.info("Go to '⚙️ Scraper' tab to start scraping users.")
+            st.sidebar.markdown("""
+            1. Go to the **⚙️ Scraper** tab
+            2. Enter a username (e.g. `spez`)
+            3. Check **"Is a User"**
+            4. Click **Start Scraping**
+            """)
+        st.sidebar.info("💡 Tip: Scroll right in the tab bar to see all tabs →")
     else:
         # Selector
         selected_sub = st.sidebar.selectbox(
@@ -356,7 +428,7 @@ def main():
                     top_comments = comments_df.nlargest(10, 'score')[['body', 'score', 'author', 'created_utc']]
                     for _, row in top_comments.iterrows():
                         with st.expander(f"⬆️ {row['score']} - by u/{row['author']}"):
-                            st.write(row['body'][:500])
+                            st.write(sanitize_emotes(row['body'][:500]))
                 
                 st.divider()
                 
@@ -416,25 +488,49 @@ def main():
         if active_job:
             st.info(f"🔄 **Scraping in Progress**: {active_job.get('target', 'Unknown')} (PID: {active_job.get('pid')})")
             
-            # Stop button
-            if st.button("🛑 Stop Scraping"):
-                try:
-                    import signal
-                    os.kill(active_job['pid'], signal.SIGTERM)
-                    st.warning("Stopped process.")
-                except:
-                    st.warning("Process already stopped.")
-                
-                if JOB_FILE.exists():
-                    JOB_FILE.unlink()
-                st.rerun()
+            # Stop button with confirmation
+            col_stop, col_confirm = st.columns([1, 2])
+            with col_stop:
+                stop_clicked = st.button("🛑 Stop Scraping", type="secondary")
+            
+            if stop_clicked:
+                with col_confirm:
+                    st.warning("⚠️ Are you sure? This will terminate the current scrape.")
+                    confirm_col1, confirm_col2 = st.columns(2)
+                    with confirm_col1:
+                        if st.button("✅ Yes, Stop", type="primary"):
+                            try:
+                                import signal
+                                os.kill(active_job['pid'], signal.SIGTERM)
+                                st.success("✅ Process stopped successfully.")
+                            except:
+                                st.info("Process already stopped.")
+                            
+                            if JOB_FILE.exists():
+                                JOB_FILE.unlink()
+                            time.sleep(0.5)
+                            st.rerun()
+                    with confirm_col2:
+                        if st.button("❌ Cancel"):
+                            st.rerun()
             
             # Read logs
-            log_file = Path(active_job['log_file'])
-            if log_file.exists():
-                with open(log_file, "r", encoding="utf-8", errors="replace") as f:
-                    lines = f.readlines()
-                
+            lines = []
+            log_file_valid = False
+            try:
+                log_file_str = active_job.get('log_file', '')
+                if log_file_str:
+                    validated_log_path = validate_path(log_file_str, LOG_DIR)
+                    if not is_sensitive(validated_log_path):
+                        log_file = Path(validated_log_path)
+                        if log_file.exists():
+                            with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                                lines = f.readlines()
+                            log_file_valid = True
+            except Exception as e:
+                st.error(f"Error accessing log file: {e}")
+
+            if log_file_valid:
                 # Parse metrics from lines
                 posts_saved = 0
                 comments_count = 0
@@ -516,11 +612,69 @@ def main():
                 is_user = st.checkbox("Is a User (not subreddit)")
             
             with col2:
-                limit = st.number_input("Post Limit", min_value=10, max_value=5000, value=100)
-                mode = st.selectbox("Mode", ['full', 'history'])
+                limit = st.number_input("Post Limit", min_value=10, max_value=5000, value=100, 
+                                        help="Maximum number of posts to scrape")
+                mode = st.selectbox(
+                    "Mode", 
+                    ['full', 'history'],
+                    help="**full**: Download posts + comments + media files\n\n**history**: Posts + comments only (faster, no media)")
             
             no_media = st.checkbox("Skip media download")
             no_comments = st.checkbox("Skip comments")
+            
+            # --- PROXY SETTINGS SECTION ---
+            with st.expander("🔒 Proxy Settings", expanded=False):
+                proxy_provider = st.selectbox(
+                    "Proxy Mode",
+                    ["Default (from .env)", "No Proxy (Direct Connection)", "Custom Proxy", "ScrapingAnt (Datacenter)", "ScrapingAnt (Residential)"],
+                    index=0,
+                    help="Choose your proxy configuration. Select 'Default' to use whatever is configured in your .env file."
+                )
+                
+                proxy_to_pass = ""
+                
+                if proxy_provider == "Custom Proxy":
+                    proxy_to_pass = st.text_input("Custom Proxy URL", placeholder="e.g. http://username:password@host:port")
+                
+                elif proxy_provider in ["ScrapingAnt (Datacenter)", "ScrapingAnt (Residential)"]:
+                    col_user, col_pass = st.columns(2)
+                    with col_user:
+                        sa_user = st.text_input("ScrapingAnt Username", placeholder="e.g. sa_user_12345")
+                    with col_pass:
+                        sa_pass = st.text_input("ScrapingAnt Password", type="password", placeholder="e.g. sa_pass_abcde12345")
+                    
+                    st.markdown("**Advanced Targeting (Optional)**")
+                    col_country, col_session = st.columns(2)
+                    with col_country:
+                        countries = ["None", "US", "UK", "CA", "HK", "SG", "ES", "FR", "IT", "DE", "AT", "RO", "BR", "IN"]
+                        sa_country = st.selectbox("Target Country", countries, index=0)
+                    with col_session:
+                        sa_session = st.text_input("Sticky Session ID", placeholder="e.g. session_123")
+                    
+                    if sa_user and sa_pass:
+                        username_parts = []
+                        clean_user = sa_user.replace("customer-", "").strip()
+                        username_parts.append(f"customer-{clean_user}")
+                        
+                        if sa_country != "None":
+                            username_parts.append(f"country-{sa_country.lower()}")
+                        
+                        if sa_session.strip():
+                            username_parts.append(f"sessionid-{sa_session.strip()}")
+                        
+                        final_username = "-".join(username_parts)
+                        
+                        if proxy_provider == "ScrapingAnt (Datacenter)":
+                            proxy_to_pass = f"https://{final_username}:{sa_pass}@datacenter.scrapingant.com:443"
+                        else:
+                            proxy_to_pass = f"https://{final_username}:{sa_pass}@residential.scrapingant.com:443"
+                        
+                        st.success("🔗 ScrapingAnt Proxy URL constructed successfully!")
+                    else:
+                        st.info("💡 Fill in your ScrapingAnt credentials to construct the proxy link.")
+                
+                elif proxy_provider == "No Proxy (Direct Connection)":
+                    proxy_to_pass = "none"
             
             if st.button("🚀 Start Scraping"):
                 if not new_sub:
@@ -530,6 +684,8 @@ def main():
                     if is_user: target_cmd.append("--user")
                     if no_media: target_cmd.append("--no-media")
                     if no_comments: target_cmd.append("--no-comments")
+                    if proxy_to_pass.strip():
+                        target_cmd.extend(["--proxy", proxy_to_pass.strip()])
                     
                     # Start background process
                     import subprocess
@@ -648,7 +804,7 @@ def main():
                                 except:
                                     st.text(img.name[:15])
             else:
-                st.info(f"No media found for {selected_sub}. Run with `--mode full` to download media.")
+                st.info(f"📁 No media found for {selected_sub}. To download media, select **'full' mode** when starting a new scrape above.")
     
     with tab_map["📋 Job History"]:
         st.header("📋 Job History")
@@ -872,20 +1028,36 @@ def main():
                         st.error(f"❌ Backup failed: {result.stderr}")
         
         with col2:
+            # Vacuum with confirmation using session state
+            if 'confirm_vacuum' not in st.session_state:
+                st.session_state.confirm_vacuum = False
+            
             if st.button("🧹 Vacuum/Optimize"):
-                with st.spinner("Optimizing database..."):
-                    import subprocess
-                    result = subprocess.run(
-                        ["python", "main.py", "--vacuum"],
-                        capture_output=True,
-                        text=True,
-                        cwd=str(Path(__file__).parent.parent)
-                    )
-                    if result.returncode == 0:
-                        st.success("✅ Database optimized!")
-                        st.code(result.stdout[-300:] if len(result.stdout) > 300 else result.stdout)
-                    else:
-                        st.error(f"❌ Vacuum failed: {result.stderr}")
+                st.session_state.confirm_vacuum = True
+            
+            if st.session_state.confirm_vacuum:
+                st.warning("⚠️ This will optimize the database. Safe but may take time for large DBs.")
+                vcol1, vcol2 = st.columns(2)
+                with vcol1:
+                    if st.button("✅ Proceed", key="confirm_vac"):
+                        st.session_state.confirm_vacuum = False
+                        with st.spinner("Optimizing database..."):
+                            import subprocess
+                            result = subprocess.run(
+                                ["python", "main.py", "--vacuum"],
+                                capture_output=True,
+                                text=True,
+                                cwd=str(Path(__file__).parent.parent)
+                            )
+                            if result.returncode == 0:
+                                st.success("✅ Database optimized!")
+                                st.code(result.stdout[-300:] if len(result.stdout) > 300 else result.stdout)
+                            else:
+                                st.error(f"❌ Vacuum failed: {result.stderr}")
+                with vcol2:
+                    if st.button("❌ Cancel", key="cancel_vac"):
+                        st.session_state.confirm_vacuum = False
+                        st.rerun()
         
         with col3:
             try:

@@ -20,3 +20,5 @@ uvicorn
 # System & Analytics
 psutil
 duckdb
+defusedxml
+

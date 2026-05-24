@@ -315,6 +315,58 @@ reddit-scraper/
 
 ---
 
+## 🔒 Proxies
+
+To prevent IP blocks, rate limits, and captcha challenges when scraping Reddit at scale, you can configure proxies. Both the standard synchronous scraper and the asynchronous scraper support HTTP and HTTPS proxies.
+
+### Configuration
+
+You can configure proxies in four ways:
+
+1. **Command Line / CLI**:
+   Pass the `--proxy` flag to override global configurations:
+   ```bash
+   python main.py python --limit 100 --proxy "http://username:password@host:port"
+   ```
+2. **Environment Variable**:
+   ```bash
+   export PROXY_URL="http://username:password@host:port"
+   ```
+3. **Configuration File**:
+   Update `config.py` with your default proxy URL:
+   ```python
+   PROXY_URL = "http://username:password@host:port"
+   ```
+4. **Web Dashboard**:
+   Provide the **Proxy URL (Optional)** in the Scraper control tab when starting a scrape.
+
+> [!TIP]
+> **ScrapingAnt Integration Note**: ScrapingAnt usernames must be prefixed with `customer-` (e.g., `customer-YOUR_USERNAME`). When integrating ScrapingAnt with Python `requests` or `aiohttp`, use the **HTTPS** proxy protocol on port **443** (e.g., `https://customer-YOUR_USERNAME:PASSWORD@datacenter.scrapingant.com:443`) for correct secure SSL tunnel authentication.
+
+---
+
+### Recommended Proxy Provider
+
+For the most reliable scraping performance, we recommend **[ScrapingAnt](https://scrapingant.com/legal/affiliate/?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)**. They provide high-performance datacenter proxies (for speed and economy) and residential proxies (for bypassing strict blocks).
+
+#### 🛜 Datacenter Proxies (Fast & Cost-Effective)
+Great for scraping mirrors and moderate-volume queries:
+* **[Get ScrapingAnt Datacenter Proxies](https://scrapingant.com/datacenter-proxies?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)**
+* Apply coupon code **`sanjeev_test`** during checkout on the Micro plan to receive **1 month of free proxy usage**.
+
+[![ScrapingAnt Datacenter Proxies](docs/Screenshot%202026-05-08%20at%2014.17.46.png)](https://scrapingant.com/datacenter-proxies?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)
+
+#### 🏠 Residential Proxies (Highly Anonymous)
+The gold standard for undetected scraping. Bypasses strict anti-scraping protections:
+* **[Get ScrapingAnt Residential Proxies](https://scrapingant.com/residential-proxies?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)**
+* Apply coupon code **`sanjeev_test`** during checkout on the Micro plan to receive **1 month of free proxy usage**.
+
+[![ScrapingAnt Residential Proxies](docs/Screenshot%202026-05-08%20at%2014.17.29.png)](https://scrapingant.com/residential-proxies?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)
+
+*Note: Make sure to place the screenshots `Screenshot 2026-05-08 at 14.17.46.png` and `Screenshot 2026-05-08 at 14.17.29.png` inside the `docs/` folder for the images to render.*
+
+---
+
 ## ⚙️ Environment Variables
 
 ```bash

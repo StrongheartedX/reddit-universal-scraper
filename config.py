@@ -4,6 +4,16 @@ Reddit Scraper Suite - Configuration
 import os
 from pathlib import Path
 
+# Load environment variables from .env file if it exists
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, val = line.split("=", 1)
+                os.environ[key.strip()] = val.strip().strip('"').strip("'")
+
 # --- PATHS ---
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -50,6 +60,10 @@ DASHBOARD_PORT = 8501
 
 # --- SCHEDULER SETTINGS ---
 SCHEDULER_TIMEZONE = "Asia/Kolkata"
+
+# --- PROXY SETTINGS ---
+# Generic proxy URL (e.g. http://username:password@host:port)
+PROXY_URL = os.getenv("PROXY_URL", "")
 
 # --- DATABASE SETTINGS ---
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
