@@ -347,23 +347,23 @@ You can configure proxies in four ways:
 
 ### Recommended Proxy Provider
 
-For the most reliable scraping performance, we recommend **[ScrapingAnt](https://scrapingant.com/legal/affiliate/?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)**. They provide high-performance datacenter proxies (for speed and economy) and residential proxies (for bypassing strict blocks).
+For the most reliable scraping performance, we recommend **[ScrapingAnt](https://scrapingant.com/?ref=yjk4mme)**. They provide high-performance datacenter proxies (for speed and economy) and residential proxies (for bypassing strict blocks).
 
 #### 🛜 Datacenter Proxies (Fast & Cost-Effective)
 Great for scraping mirrors and moderate-volume queries:
-* **[Get ScrapingAnt Datacenter Proxies](https://scrapingant.com/datacenter-proxies?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)**
+* **[Get ScrapingAnt Datacenter Proxies](https://scrapingant.com/datacenter-proxies?ref=yjk4mme)**
 * Apply coupon code **`sanjeev_test`** during checkout on the Micro plan to receive **1 month of free proxy usage**.
+* Apply coupon code **`ENTHUSIAST_50`** during checkout for a **50% discount** on the Enthusiast plan.
 
-[![ScrapingAnt Datacenter Proxies](docs/Screenshot%202026-05-08%20at%2014.17.46.png)](https://scrapingant.com/datacenter-proxies?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)
+[![ScrapingAnt Datacenter Proxies](docs/datacenterproxies.png)](https://scrapingant.com/datacenter-proxies?ref=yjk4mme)
 
 #### 🏠 Residential Proxies (Highly Anonymous)
 The gold standard for undetected scraping. Bypasses strict anti-scraping protections:
-* **[Get ScrapingAnt Residential Proxies](https://scrapingant.com/residential-proxies?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)**
+* **[Get ScrapingAnt Residential Proxies](https://scrapingant.com/residential-proxies?ref=yjk4mme)**
 * Apply coupon code **`sanjeev_test`** during checkout on the Micro plan to receive **1 month of free proxy usage**.
+* Apply coupon code **`MICRO_50`** during checkout for a **50% discount** on the Micro residential plan.
 
-[![ScrapingAnt Residential Proxies](docs/Screenshot%202026-05-08%20at%2014.17.29.png)](https://scrapingant.com/residential-proxies?utm_source=affiliate&utm_medium=github&utm_campaign=reddit-scraper)
-
-*Note: Make sure to place the screenshots `Screenshot 2026-05-08 at 14.17.46.png` and `Screenshot 2026-05-08 at 14.17.29.png` inside the `docs/` folder for the images to render.*
+[![ScrapingAnt Residential Proxies](docs/ResidentialProxies.png)](https://scrapingant.com/residential-proxies?ref=yjk4mme)
 
 ---
 
