@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import USER_AGENT, MIRRORS, ASYNC_MAX_CONCURRENT, ASYNC_BATCH_SIZE, PROXY_URL
+from config import USER_AGENT, MIRRORS, ASYNC_MAX_CONCURRENT, ASYNC_BATCH_SIZE, PROXY_URL, get_formatted_proxy_url
 import subprocess
 import tempfile
 
@@ -25,7 +25,8 @@ async def fetch_json(session, url, retries=3, proxy=None):
     """Fetch JSON with retry logic."""
     for attempt in range(retries):
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15), proxy=proxy) as response:
+            rotated_proxy = get_formatted_proxy_url(proxy, force_rotate=True) if proxy else proxy
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15), proxy=rotated_proxy) as response:
                 if response.status == 200:
                     return await response.json()
                 elif response.status == 429:  # Rate limited
@@ -57,7 +58,8 @@ async def download_media_async(session, url, save_path, proxy=None):
     
     async with semaphore:
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=60), proxy=proxy) as response:
+            rotated_proxy = get_formatted_proxy_url(proxy, force_rotate=True) if proxy else proxy
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=60), proxy=rotated_proxy) as response:
                 if response.status == 200:
                     async with aiofiles.open(save_path, 'wb') as f:
                         async for chunk in response.content.iter_chunked(8192):
@@ -79,6 +81,7 @@ async def download_reddit_video_with_audio_async(session, video_url, save_path, 
     
     async with semaphore:
         try:
+            rotated_proxy = get_formatted_proxy_url(proxy, force_rotate=True) if proxy else proxy
             # Find audio URL by replacing video quality with audio
             base_url = video_url.rsplit('/', 1)[0]
             audio_urls = [
@@ -95,7 +98,7 @@ async def download_reddit_video_with_audio_async(session, video_url, save_path, 
             video_temp.close()
             
             try:
-                async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=60), proxy=proxy) as response:
+                async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=60), proxy=rotated_proxy) as response:
                     if response.status != 200:
                         return False
                     async with aiofiles.open(video_temp_path, 'wb') as f:
@@ -110,7 +113,7 @@ async def download_reddit_video_with_audio_async(session, video_url, save_path, 
             audio_temp_path = None
             for audio_url in audio_urls:
                 try:
-                    async with session.get(audio_url, timeout=aiohttp.ClientTimeout(total=30), proxy=proxy) as response:
+                    async with session.get(audio_url, timeout=aiohttp.ClientTimeout(total=30), proxy=rotated_proxy) as response:
                         if response.status == 200:
                             audio_temp = tempfile.NamedTemporaryFile(suffix='_audio.mp4', delete=False)
                             audio_temp_path = audio_temp.name
@@ -498,9 +501,22 @@ if __name__ == "__main__":
     parser.add_argument("--no-media", action="store_true")
     parser.add_argument("--no-comments", action="store_true")
     parser.add_argument("--proxy", help="Proxy URL (e.g. http://username:password@host:port)")
+    parser.add_argument("--proxy-country", type=str, help="Target country code")
+    parser.add_argument("--proxy-session", type=str, help="Sticky session ID")
+    parser.add_argument("--no-proxy-rotate", action="store_true", help="Disable auto-rotation")
     
     args = parser.parse_args()
     
+    if args.proxy_country:
+        import config
+        config.PROXY_COUNTRY = args.proxy_country
+    if args.proxy_session:
+        import config
+        config.PROXY_SESSION_ID = args.proxy_session
+    if args.no_proxy_rotate:
+        import config
+        config.PROXY_AUTO_ROTATE = False
+        
     run_async_scraper(
         args.target,
         args.limit,

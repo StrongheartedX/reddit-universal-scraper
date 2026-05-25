@@ -40,6 +40,25 @@ MIRRORS = [
 ]
 
 PROXY_URL = os.getenv("PROXY_URL", "")
+PROXY_TO_USE = ""
+
+def rotate_session_proxy(country=None, session_id=None, force_rotate=False):
+    """Dynamically rotates/updates the proxy URL on the global SESSION object."""
+    global PROXY_TO_USE
+    if not PROXY_TO_USE or PROXY_TO_USE.lower() in ["none", "direct", "disabled", ""]:
+        return
+    
+    try:
+        from config import get_formatted_proxy_url
+        formatted_url = get_formatted_proxy_url(PROXY_TO_USE, country, session_id, force_rotate)
+        SESSION.proxies = {
+            "http": formatted_url,
+            "https": formatted_url,
+        }
+        os.environ["HTTP_PROXY"] = formatted_url
+        os.environ["HTTPS_PROXY"] = formatted_url
+    except Exception as e:
+        print(f"⚠️ Error rotating proxy: {e}")
 
 SEEN_URLS = set()
 SESSION = requests.Session()
@@ -170,6 +189,7 @@ def download_media(url, save_path, media_type="image"):
         if os.path.exists(save_path):
             return True
         
+        rotate_session_proxy(force_rotate=True)
         response = SESSION.get(url, timeout=30, stream=True)
         if response.status_code == 200:
             with open(save_path, 'wb') as f:
@@ -205,6 +225,7 @@ def download_reddit_video_with_audio(video_url, save_path):
         # Download video to temp file first
         with tempfile.NamedTemporaryFile(suffix='_video.mp4', delete=False) as video_temp:
             video_temp_path = video_temp.name
+            rotate_session_proxy(force_rotate=True)
             response = SESSION.get(video_url, timeout=60, stream=True)
             if response.status_code != 200:
                 return False
@@ -312,6 +333,7 @@ def scrape_comments(permalink, max_depth=3):
         else:
             url = f"{permalink}.json?limit=100"
         
+        rotate_session_proxy(force_rotate=True)
         response = SESSION.get(url, timeout=15)
         if response.status_code != 200:
             return comments
@@ -473,6 +495,7 @@ def run_full_history(target, limit, is_user=False, download_media_flag=True,
                         target_url += f"&after={after}"
                     
                     print(f"\n📡 Fetching from: {base_url}")
+                    rotate_session_proxy(force_rotate=True)
                     response = SESSION.get(target_url, timeout=15)
                     
                     if response.status_code == 200:
@@ -623,6 +646,7 @@ def run_monitor(target, is_user=False):
     print(f"[{datetime.datetime.now()}] 📡 Checking RSS for {prefix}/{target}...")
     
     try:
+        rotate_session_proxy(force_rotate=True)
         response = SESSION.get(rss_url, timeout=15)
         
         if response.status_code != 200:
@@ -745,27 +769,40 @@ Commands:
     parser.add_argument("--export-parquet", type=str, help="Export subreddit to Parquet format")
     parser.add_argument("--api", action="store_true", help="Start REST API server (port 8000)")
     parser.add_argument("--proxy", type=str, help="Proxy URL (e.g. http://username:password@host:port)")
+    parser.add_argument("--proxy-country", type=str, help="Target country code for ScrapingAnt proxies (e.g. US, IN)")
+    parser.add_argument("--proxy-session", type=str, help="Persistent session ID for ScrapingAnt proxies")
+    parser.add_argument("--no-proxy-rotate", action="store_true", help="Disable automatic session rotation")
     
     args = parser.parse_args()
     
     # Configure Proxy
-    proxy_to_use = args.proxy if args.proxy is not None else PROXY_URL
-    if proxy_to_use and proxy_to_use.lower() not in ["none", "direct", "disabled", ""]:
-        SESSION.proxies = {
-            "http": proxy_to_use,
-            "https": proxy_to_use,
-        }
-        os.environ["HTTP_PROXY"] = proxy_to_use
-        os.environ["HTTPS_PROXY"] = proxy_to_use
+    global PROXY_TO_USE
+    PROXY_TO_USE = args.proxy if args.proxy is not None else PROXY_URL
+    
+    # Apply CLI overrides to configuration if provided
+    if args.proxy_country:
+        import config
+        config.PROXY_COUNTRY = args.proxy_country
+    if args.proxy_session:
+        import config
+        config.PROXY_SESSION_ID = args.proxy_session
+    if args.no_proxy_rotate:
+        import config
+        config.PROXY_AUTO_ROTATE = False
+        
+    if PROXY_TO_USE and PROXY_TO_USE.lower() not in ["none", "direct", "disabled", ""]:
+        # Do initial proxy rotation/setup
+        rotate_session_proxy(force_rotate=False)
         
         try:
-            parsed = urlparse(proxy_to_use)
+            current_proxy = SESSION.proxies.get("https", PROXY_TO_USE)
+            parsed = urlparse(current_proxy)
             if parsed.username:
                 masked_proxy = f"{parsed.scheme}://{parsed.username}:*****@{parsed.hostname}"
                 if parsed.port:
                     masked_proxy += f":{parsed.port}"
             else:
-                masked_proxy = proxy_to_use
+                masked_proxy = current_proxy
         except Exception:
             masked_proxy = "[Invalid Proxy URL]"
         print(f"🔒 Using Proxy: {masked_proxy}")
@@ -775,7 +812,7 @@ Commands:
         if "HTTPS_PROXY" in os.environ:
             del os.environ["HTTPS_PROXY"]
         SESSION.proxies = {}
-        if proxy_to_use and proxy_to_use.lower() in ["none", "direct", "disabled"]:
+        if PROXY_TO_USE and PROXY_TO_USE.lower() in ["none", "direct", "disabled"]:
             print("🚫 Proxy explicitly disabled (Direct connection)")
         
     print("=" * 50)
